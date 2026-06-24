@@ -1,0 +1,49 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'maven-publish'
+    alias( libs.plugins.enonic.defaults )
+    alias( libs.plugins.enonic.xp.base )
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of( 25 )
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    xp.enonicRepo( 'dev' )
+}
+
+dependencies {
+    compileOnly "com.enonic.xp:script-api:${xpVersion}"
+    compileOnly "org.osgi:osgi.core:8.0.0" // FrameworkUtil, BundleContext, ServiceReference (provided by the XP system bundle at runtime)
+
+    testImplementation platform( libs.mockito.core )
+    testImplementation libs.junit.jupiter
+    testImplementation libs.mockito.jupiter
+    testRuntimeOnly libs.junit.launcher
+    testImplementation "com.enonic.xp:script-api:${xpVersion}"
+    testImplementation "org.osgi:osgi.core:8.0.0"
+    testImplementation "com.enonic.xp:testing:${xpVersion}"
+}
+
+tasks.named( 'test', Test ) {
+    useJUnitPlatform()
+}
+
+jacocoTestReport {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+check.dependsOn jacocoTestReport
