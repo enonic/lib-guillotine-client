@@ -13,6 +13,7 @@ import org.osgi.framework.ServiceReference;
 import com.enonic.xp.script.ScriptValue;
 import com.enonic.xp.script.bean.BeanContext;
 import com.enonic.xp.script.bean.ScriptBean;
+import com.enonic.xp.script.serializer.MapSerializable;
 
 /**
  * Executes GraphQL queries against the Guillotine engine exposed by {@code app-guillotine} without going over the HTTP
@@ -25,6 +26,7 @@ import com.enonic.xp.script.bean.ScriptBean;
  *   input  = { "query": String, "variables": Map&lt;String,Object&gt; }
  *   output = { "data": ..., "errors": ... }   // GraphQL-spec response
  * </pre>
+ * The response is wrapped in a {@link MapSerializable} so that {@code __.toNativeObject} turns it into a native JS object.
  * The lookup is done dynamically through this bundle's own {@link BundleContext}; the OSGi service registry is global so
  * the service is found regardless of which bundle registered it. The query runs in the caller's current XP context.
  */
@@ -47,7 +49,7 @@ public final class GuillotineExecutorBean
     }
 
     @SuppressWarnings("unchecked")
-    public Map<String, Object> execute( final String query, final ScriptValue variables )
+    public MapSerializable execute( final String query, final ScriptValue variables )
     {
         final Map<String, Object> input =
             Map.of( QUERY_KEY, query, VARIABLES_KEY, variables != null && variables.isObject() ? variables.getMap() : Map.of() );
@@ -59,12 +61,12 @@ public final class GuillotineExecutorBean
 
         if ( executor == null )
         {
-            throw new IllegalStateException( "Guillotine GraphQL executor service is unavailable - is app-guillotine started?" );
+            throw new IllegalStateException( "Guillotine GraphQL executor API is unavailable - is app-guillotine started?" );
         }
 
         try
         {
-            return executor.apply( input );
+            return new GuillotineResponseMapper( executor.apply( input ) );
         }
         finally
         {
@@ -93,7 +95,7 @@ public final class GuillotineExecutorBean
             final Bundle bundle = ref.getBundle();
             return bundle != null && bundle.getState() == Bundle.ACTIVE;
         } ).findFirst().orElseThrow(
-            () -> new IllegalStateException( "Guillotine GraphQL executor service not found - is app-guillotine installed and started?" ) );
+            () -> new IllegalStateException( "Guillotine GraphQL executor API not found - is app-guillotine installed and started?" ) );
     }
 
     void setBundleContext( final BundleContext bundleContext )

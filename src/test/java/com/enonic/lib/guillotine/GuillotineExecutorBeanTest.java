@@ -1,5 +1,7 @@
 package com.enonic.lib.guillotine;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -10,10 +12,14 @@ import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.enonic.xp.script.ScriptValue;
+import com.enonic.xp.script.serializer.MapSerializable;
+import com.enonic.xp.testing.serializer.JsonMapGenerator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -64,9 +70,9 @@ class GuillotineExecutorBeanTest
         when( variables.isObject() ).thenReturn( true );
         when( variables.getMap() ).thenReturn( Map.of( "id", "123" ) );
 
-        final Map<String, Object> result = bean.execute( "{ guillotine }", variables );
+        final MapSerializable result = bean.execute( "{ guillotine }", variables );
 
-        assertSame( response, result );
+        assertEquals( json( "{\"data\":{\"hello\":\"world\"}}" ), toJson( result ) );
 
         final org.mockito.ArgumentCaptor<Map<String, Object>> captor = org.mockito.ArgumentCaptor.forClass( Map.class );
         verify( executor ).apply( captor.capture() );
@@ -98,6 +104,32 @@ class GuillotineExecutorBeanTest
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void execute_serializes_nested_lists_maps_and_nulls()
+        throws Exception
+    {
+        final Bundle bundle = mock( Bundle.class );
+        when( bundle.getState() ).thenReturn( Bundle.ACTIVE );
+        when( reference.getBundle() ).thenReturn( bundle );
+
+        when( bundleContext.getServiceReferences( eq( Function.class ), eq( FILTER ) ) ).thenReturn( List.of( reference ) );
+        when( bundleContext.getService( reference ) ).thenReturn( (Function) executor );
+
+        final Map<String, Object> child = new HashMap<>();
+        child.put( "_id", "1" );
+        child.put( "displayName", null );
+        final Map<String, Object> response = new HashMap<>();
+        response.put( "data", Map.of( "guillotine", Map.of( "getChildren", List.of( child ), "count", 1 ) ) );
+        response.put( "errors", Arrays.asList( Map.of( "message", "boom", "locations", List.of( Map.of( "line", 1, "column", 2 ) ) ) ) );
+        when( executor.apply( any() ) ).thenReturn( response );
+
+        final JsonNode json = toJson( bean.execute( "{ guillotine }", null ) );
+
+        assertEquals( json( "{\"data\":{\"guillotine\":{\"getChildren\":[{\"_id\":\"1\",\"displayName\":null}],\"count\":1}}," +
+                            "\"errors\":[{\"message\":\"boom\",\"locations\":[{\"line\":1,\"column\":2}]}]}" ), json );
+    }
+
+    @Test
     void execute_throws_when_service_not_found()
         throws Exception
     {
@@ -111,5 +143,18 @@ class GuillotineExecutorBeanTest
     {
         bean.setBundleContext( null );
         assertThrows( IllegalStateException.class, () -> bean.execute( "{ guillotine }", null ) );
+    }
+
+    private static JsonNode toJson( final MapSerializable value )
+    {
+        final JsonMapGenerator generator = new JsonMapGenerator();
+        value.serialize( generator );
+        return (JsonNode) generator.getRoot();
+    }
+
+    private static JsonNode json( final String value )
+        throws Exception
+    {
+        return new ObjectMapper().readTree( value );
     }
 }
